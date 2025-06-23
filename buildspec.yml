@@ -4,7 +4,7 @@ env:
   variables:
     ENV: "dev"  # You can override this from CodeBuild environment variables
     S3_BUCKET: "ganesh-s3-scripts"
-    GLUE_JOB_NAME: "load-s3-to-snowflake1"
+    GLUE_JOB_NAME: "load-s3-to-snowflake2"
 
 phases:
   install:
