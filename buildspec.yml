@@ -1,0 +1,53 @@
+version: 0.2
+
+env:
+  variables:
+    ENV: "dev"  # You can override this from CodeBuild environment variables
+    S3_BUCKET: "ganesh-s3-inbound-datafiles"
+    GLUE_JOB_NAME: "load-s3-to-snowflake1"
+
+phases:
+  install:
+    runtime-versions:
+      python: 3.9
+    commands:
+      - echo Installing dependencies...
+      - pip install --upgrade awscli boto3
+      - echo Installation completed.
+
+  pre_build:
+    commands:
+      - echo Preparing build...
+      - mkdir -p build
+
+  build:
+    commands:
+      - echo Packaging Python script...
+      - cp load-s3-to-snowflake.py build/
+      - cd build && zip glue_job.zip load-s3-to-snowflake.py
+      - cd ..
+      - echo Uploading script to S3: s3://$S3_BUCKET/jobs/$GLUE_JOB_NAME.zip
+      - aws s3 cp build/glue_job.zip s3://$S3_BUCKET/jobs/$GLUE_JOB_NAME.zip
+
+  post_build:
+    commands:
+      - echo Creating or updating Glue job...
+      - |
+        aws glue get-job --job-name $GLUE_JOB_NAME >/dev/null 2>&1
+        if [ $? -eq 0 ]; then
+          echo "Updating existing Glue job..."
+          aws glue update-job --job-name $GLUE_JOB_NAME --job-update '{
+            "Command": {
+              "Name": "glueetl",
+              "ScriptLocation": "s3://'"$S3_BUCKET"'/jobs/'"$GLUE_JOB_NAME"'.zip",
+              "PythonVersion": "3"
+            },
+            "Role": "arn:aws:iam::431152842641:role/AWSGlueServiceRole"
+          }'
+        else
+          echo "Creating new Glue job..."
+          aws glue create-job --name $GLUE_JOB_NAME --role arn:aws:iam::431152842641:role/AWSGlueServiceRole \
+            --command '{"Name": "glueetl", "ScriptLocation": "s3://'"$S3_BUCKET"'/jobs/'"$GLUE_JOB_NAME"'.zip", "PythonVersion": "3"}' \
+            --glue-version "3.0" --number-of-workers 2 --worker-type G.1X
+        fi
+      - echo Glue job deployment complete.
